@@ -130,7 +130,7 @@ proc fail(msg: string)  =
   stderr.writeln(progname & ": " & msg)
   quit(usage)
 
-proc parseSpec (u: string) =    
+proc parseSpec(u: string) =    
   var
     L: PLexer
     tok: string
@@ -152,7 +152,7 @@ proc parseSpec (u: string) =
     if tok == "-" or tok == "--":  # flag
       if tok == "-": #short flag
         let flag = L.get
-        if len(flag) != 1: fail("short flag has one character!")
+        if len(flag) != 1: fail("short option has one character!")
         tok = L.get
         if tok == ",": # which is alias for long flag
           tok = L.get
@@ -219,7 +219,7 @@ proc closeFiles() {.noconv.} =
   if nfiles == 0: return
   for i in 1..nfiles: files[i].close()
 
-proc parseArguments (usage: string, args: seq[string]): Table[string,PValue] =
+proc parseArguments(usage: string, args: seq[string]): Table[string,PValue] =
   var
     vars = initTable[string,PValue]()
     n = len(args) - 1
@@ -231,7 +231,7 @@ proc parseArguments (usage: string, args: seq[string]): Table[string,PValue] =
     flagvalues: seq[seq[string]]
       
   proc next(): string =
-    if i > n: fail("a flag required a value!")
+    if i > n: fail("an option required a value!")
     result = args[i]
     i += 1
       
@@ -242,12 +242,12 @@ proc parseArguments (usage: string, args: seq[string]): Table[string,PValue] =
       if n < 20:
         fail("no such argument: " & $n)
       else:
-        fail("no such flag " & c)
+        fail("no such option: " & c)
       
   proc get_spec(name: string): PSpec =
     result = parm_spec[name]
     if result == nil:
-      fail("no such flag " & name)
+      fail("no such option: " & name)
 
   newSeq(flagvalues, 0)
   parseSpec(usage)
@@ -262,7 +262,7 @@ proc parseArguments (usage: string, args: seq[string]): Table[string,PValue] =
       if short: # all short args are aliases, even if only to themselves
         flag = get_alias(arg[0])
       else:
-        flag = arg
+        flag = arg[1..high(arg)]
       info = get_spec(flag)
       if info.needsValue:
         if short and len(arg) > 1: # value can follow short flag
@@ -291,7 +291,7 @@ proc parseArguments (usage: string, args: seq[string]): Table[string,PValue] =
   for flag,info in parm_spec:
     if not info.used:
       if info.defVal == "": # no default!
-        fail("required flag missing: " & flag)
+        fail("required option or argument missing: " & flag)
       flagvalues.add(@[flag,info.defVal])
           
   # cool, we have the info, can convert known flags
@@ -348,7 +348,7 @@ proc parseArguments (usage: string, args: seq[string]): Table[string,PValue] =
 
   return vars
 
-proc parse* (usage: string): Table[string,PValue] =
+proc parse*(usage: string): Table[string,PValue] =
   var 
     args: seq[string]
     n = paramCount()
@@ -363,7 +363,7 @@ when isMainModule:
     -n: (default 10) number of lines
     -v,--verbose: (bool...) verbosity level 
     -a,--alpha  useless parm
-    <files>: (default stdin...)
+    <file>: (default stdin...)
     |<out>: (default stdout)
   """
 
