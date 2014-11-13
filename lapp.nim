@@ -50,10 +50,10 @@ proc get(L: PLexer; t: var TLexType): string =
       next(L)
     if thisChar(L) == '.':
       t = tfloat
-      result.add(c)
+      result.add(thisChar(L))
       next(L)
       while thisChar(L) in Digits:
-        result.add(c)
+        result.add(thisChar(L))
         next(L)
   of '.': # ".", "..", "..."
     if thisChar(L) == '.':
@@ -89,17 +89,17 @@ type
     vFile,
     vSeq
 
-  PValue = ref TValue
-  TValue = object
-    case kind: TValueKind
-      of vInt: asInt *: int
-      of vFloat: asFloat *: float
-      of vString: asString *: string
-      of vBool: asBool *: bool
+  PValue* = ref TValue
+  TValue* = object
+    case kind*: TValueKind
+      of vInt: asInt*: int
+      of vFloat: asFloat*: float
+      of vString: asString*: string
+      of vBool: asBool*: bool
       of vFile:
-        asFile *: File
-        fileName *: string
-      of vSeq: asSeq *: seq[PValue]
+        asFile*: File
+        fileName*: string
+      of vSeq: asSeq*: seq[PValue]
 
 proc boolValue(c: bool): PValue =  PValue(kind: vBool, asBool: c)
     
@@ -205,6 +205,7 @@ proc parseSpec(u: string) =
       defValue = "false"
             
     if name != nil:
+      # echo("Param: " & name & " type: " & $ftype & " needsvalue: " & $(ftype != "bool") & " default: " & $defValue & " multiple: " & $multiple)
       let spec = PSpec(defVal:defValue, ptype: ftype, needsValue: ftype != "bool",multiple:multiple)
       aliases[alias] = name        
       parm_spec[name] = spec
@@ -314,7 +315,7 @@ proc parseArguments(usage: string, args: seq[string]): Table[string,PValue] =
       try:
         v = value.parseFloat
       except:
-        fail("bad integer")
+        fail("bad float")
       pval = floatValue(v)
     of "bool":
       pval = boolValue(value.parseBool)
@@ -359,12 +360,12 @@ proc parse*(usage: string): Table[string,PValue] =
 
 when isMainModule:
   var args = parse"""
-  head [flags] filename
+  head [flags] [file1, file2 ...] [outfile]
     -n: (default 10) number of lines
     -v,--verbose: (bool...) verbosity level 
     -a,--alpha  useless parm
     <file>: (default stdin...)
-    |<out>: (default stdout)
+    <out>: (default stdout)
   """
 
   echo args["n"].asInt
