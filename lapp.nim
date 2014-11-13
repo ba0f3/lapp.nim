@@ -220,7 +220,7 @@ proc closeFiles() {.noconv.} =
   if nfiles == 0: return
   for i in 1..nfiles: files[i].close()
 
-proc parseArguments(usage: string, args: seq[string]): Table[string,PValue] =
+proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
   var
     vars = initTable[string,PValue]()
     n = len(args) - 1
@@ -360,7 +360,7 @@ proc parse*(usage: string): Table[string,PValue] =
 
 when isMainModule:
   var args = parse"""
-  head [flags] [file1, file2 ...] [outfile]
+  head [flags] file [out]
     -n: (default 10) number of lines
     -v,--verbose: (bool...) verbosity level 
     -a,--alpha  useless parm
