@@ -253,6 +253,9 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
   parseSpec(usage)
   addQuitProc(closeFiles)
 
+  # Collect failures
+  var failures = newSeq[string]()
+  
   # parse the flags and arguments
   while i <= n:
     arg = next()
@@ -275,7 +278,8 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
           for c in arg.tail:
             let f = get_alias(c)
             let i = get_spec(f)
-            if i.needsValue: fail("needs value! " & f)
+            if i.needsValue:
+              failures.add("option " & f & " needs a value")
             flagvalues.add(@[f,"true"])
             i.used = true
     else: # argument (stored as \001, \002, etc
@@ -286,14 +290,28 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
       if not info.multiple:  k += 1
     flagvalues.add(@[flag,value])
     info.used = true
-      
+  
+  # Some options disables checking
+  var enableChecks = true
+  for flag,info in parm_spec:
+    if info.used:
+      if flag == "help" or flag == "version":
+        enableChecks = false
+  
+
   # any flags not mentioned?
   for flag,info in parm_spec:
     if not info.used:
       if info.defVal == "": # no default!
-        fail("required option or argument missing: " & flag)
-      flagvalues.add(@[flag,info.defVal])
-          
+        failures.add("required option or argument missing: " & flag)
+      else:
+        flagvalues.add(@[flag,info.defVal])
+
+  if enableChecks:
+    # any failures up until now - then we fail
+    if failures.len > 0:
+      fail(failures.join(", "))
+
   # cool, we have the info, can convert known flags
   for item in flagvalues:
     var pval: PValue;
@@ -362,23 +380,55 @@ proc parse*(usage: string): Table[string,PValue] =
     args[i] = paramStr(i)
   return parseArguments(usage,args)    
 
-when isMainModule:
-  var args = parse"""
-  head [flags] file [out]
-    -n: (default 10) number of lines
-    -v,--verbose: (bool...) verbosity level 
-    -a,--alpha  useless parm
-    <file>: (default stdin...)
-    <out>: (default stdout)
-  """
+# Helper proc for verbosity level.
+proc verbosityLevel(args: Table[string,PValue]): int =
+  if args.hasKey("verbose"):
+    let verbosity = args["verbose"].asSeq
+    result = verbosity.len
+    if not verbosity[0].asBool:
+      result = 0
+  else:
+    result = 0
 
-  echo args["n"].asInt
-  echo args["alpha"].asBool
+# Helper to check if we should show version
+proc showVersion(args: Table[string,PValue]): bool =
+  args["version"].asBool
+
+# Helper to check if we should show help
+proc showHelp(args: Table[string,PValue]): bool =
+  args["help"].asBool
+
+
+# Typical usage
+when isMainModule:
+  let help = """
+  head [flags] files... [out]
+    -h,--help                     Show this help
+    --version                     Show version
+    -n: (default 10)              Number of lines to show
+    -v,--verbose: (bool...)       Verbosity level, ignored
+    -o,--out: (default stdout)    Optional outfile, defaults to stdout
+    <files>: (default stdin...)   Files to take head of
+  """
+  # On parsing failure this will show usage automatically
+  var args = parse(help)
+
+  # These two are special, they short out
+  if args.showHelp: quit(help)
+  if args.showVersion: quit("Version: 1.99")
   
-  for v in args["verbose"].asSeq:
-    echo "got ",v.asBool
+  # Ok, so what did we get...
+  let n = args["n"].asInt
+  
+  # This one is a helper
+  let v = verbosityLevel(args)
+  
+  echo "Lines to show: " & $n
+  echo "Verbosity level: " & $verbosityLevel(args)
   
   let myfiles = args["files"].asSeq
+  var outFile = args["out"].asFile
+  
   for f in myfiles:
-    echo f.asFile.readLine()
-        
+    for i in 1..n:
+      writeln(outFile, string(f.asFile.readLine()))
