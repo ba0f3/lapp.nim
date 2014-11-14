@@ -1,5 +1,5 @@
 import strutils
-from os import paramCount, paramStr
+import os
 import tables
 export tables.`[]`
 
@@ -125,7 +125,7 @@ var
   progname, usage: string
   aliases: array[char,string]
   parm_spec =  initTable[string,PSpec]()
-    
+
 proc fail(msg: string)  =
   stderr.writeln(progname & ": " & msg)
   quit(usage)
@@ -213,12 +213,11 @@ proc parseSpec(u: string) =
 proc tail(s: string): string = s[1..(-1)]
 
 var 
-  files: array[1..MAX_FILES,File]
-  nfiles = 0 
+  files = newSeq[File]()
 
 proc closeFiles() {.noconv.} =
-  if nfiles == 0: return
-  for i in 1..nfiles: files[i].close()
+  for f in files:
+    f.close()
 
 proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
   var
@@ -308,14 +307,14 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
       try:
         v = value.parseInt
       except:
-        fail("bad integer")
+        fail("bad integer for " & flag)
       pval = intValue(v)
     of "float":
       var v: float
       try:
         v = value.parseFloat
       except:
-        fail("bad float")
+        fail("bad float for " & flag)
       pval = floatValue(v)
     of "bool":
       pval = boolValue(value.parseBool)
@@ -325,12 +324,17 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
       var f: File
       try:
         if info.ptype == "infile":
-          f = if value=="stdin": stdin else: open(value,fmRead)
+          if value == "stdin":
+            f = stdin
+          else:
+            f = open(value, fmRead)
         else:
-          f = if value=="stdout": stdout else: open(value,fmWrite)
+          if value == "stdout":
+            f = stdout
+          else:
+            f = open(value, fmWrite)
         # they will be closed automatically on program exit
-        nfiles += 1
-        if nfiles <= MAX_FILES:  files[nfiles] = f
+        files.add(f)
       except:
         fail("cannot open " & value)
       pval = fileValue(f,value)
