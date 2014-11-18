@@ -17,6 +17,8 @@ type
     trange
     telipsis
     tchar
+    toption
+    tdivider
 
 proc thisChar(L: PLexer):char = L.str[L.idx]
 proc next(L: PLexer) = L.idx += 1
@@ -35,9 +37,15 @@ proc get(L: PLexer; t: var TLexType): string =
   t = tchar
   case c
   of '-':  # '-", "--"
+    t = toption
     if thisChar(L) == '-':
       result.add('-')
       next(L)
+      if thisChar(L) == '-': # "---..."
+        t = tdivider
+        result.add('-') 
+        while thisChar(L) == '-':
+          next(L)
   of Letters: # word
     t = tword
     while thisChar(L) in Letters:
@@ -112,14 +120,13 @@ proc intValue(v: int): PValue =   PValue(kind: vInt, asInt: v)
 proc floatValue(v: float): PValue = PValue(kind: vFloat, asFloat: v)
     
 proc seqValue(v: seq[PValue]): PValue = PValue(kind: vSeq, asSeq: v)
-
-const MAX_FILES = 30
     
 type
   PSpec = ref TSpec
   TSpec = object
     defVal: string
     ptype: string
+    group: int
     needsValue, multiple, used: bool
 var
   progname, usage: string
@@ -134,6 +141,7 @@ proc parseSpec(u: string) =
   var
     L: PLexer
     tok: string
+    groupCounter: int
     k = 1
       
   let lines = u.splitLines
@@ -173,7 +181,8 @@ proc parseSpec(u: string) =
       k += 1
       tok = L.get
       if tok != ">": fail("argument must be enclosed in <...>")
-        
+    elif tok == "---": # divider
+      inc(groupCounter)
     if getnext:  tok = L.get
     if tok == ":": # allowed to have colon after flags
       tok = L.get
@@ -205,8 +214,8 @@ proc parseSpec(u: string) =
       defValue = "false"
             
     if name != nil:
-      # echo("Param: " & name & " type: " & $ftype & " needsvalue: " & $(ftype != "bool") & " default: " & $defValue & " multiple: " & $multiple)
-      let spec = PSpec(defVal:defValue, ptype: ftype, needsValue: ftype != "bool",multiple:multiple)
+      #echo("Param: " & name & " type: " & $ftype & " group: " & $groupCounter & " needsvalue: " & $(ftype != "bool") & " default: " & $defValue & " multiple: " & $multiple)
+      let spec = PSpec(defVal:defValue, ptype: ftype, group: groupCounter, needsValue: ftype != "bool",multiple:multiple)
       aliases[alias] = name        
       parm_spec[name] = spec
 
@@ -297,12 +306,19 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
     if info.used:
       if flag == "help" or flag == "version":
         enableChecks = false
-  
-
+        
+  # Check maximum group used
+  var maxGroup = 0
+  for item in flagvalues:
+    info = get_spec(item[0])
+    if maxGroup < info.group:
+      maxGroup = info.group
+    
   # any flags not mentioned?
   for flag,info in parm_spec:
     if not info.used:
-      if info.defVal == "": # no default!
+      # Is there no default and we have used options in this group?
+      if info.defVal == "" and info.group <= maxGroup: 
         failures.add("required option or argument missing: " & flag)
       else:
         flagvalues.add(@[flag,info.defVal])
@@ -310,7 +326,7 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
   if enableChecks:
     # any failures up until now - then we fail
     if failures.len > 0:
-      fail(failures.join(", "))
+      fail(failures.join("\n") & "\n")
 
   # cool, we have the info, can convert known flags
   for item in flagvalues:
@@ -381,7 +397,7 @@ proc parse*(usage: string): Table[string,PValue] =
   return parseArguments(usage,args)    
 
 # Helper proc for verbosity level.
-proc verbosityLevel(args: Table[string,PValue]): int =
+proc verbosityLevel*(args: Table[string,PValue]): int =
   if args.hasKey("verbose"):
     let verbosity = args["verbose"].asSeq
     result = verbosity.len
@@ -391,11 +407,11 @@ proc verbosityLevel(args: Table[string,PValue]): int =
     result = 0
 
 # Helper to check if we should show version
-proc showVersion(args: Table[string,PValue]): bool =
+proc showVersion*(args: Table[string,PValue]): bool =
   args["version"].asBool
 
 # Helper to check if we should show help
-proc showHelp(args: Table[string,PValue]): bool =
+proc showHelp*(args: Table[string,PValue]): bool =
   args["help"].asBool
 
 
