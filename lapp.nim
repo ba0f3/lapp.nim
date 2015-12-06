@@ -5,11 +5,11 @@ export tables.`[]`
 
 #### Simple string lexer ###
 type
-  PLexer = ref TLexer
-  TLexer = object
+  LexerRef = ref Lexer
+  Lexer = object
     str: string
     idx: int
-  TLexType = enum
+  LexType = enum
     tend
     tword
     tint
@@ -20,20 +20,20 @@ type
     toption
     tdivider
 
-proc thisChar(L: PLexer):char = L.str[L.idx]
-proc next(L: PLexer) = L.idx += 1
+proc thisChar(L: LexerRef):char = L.str[L.idx]
+proc next(L: LexerRef) = L.idx += 1
 
-proc skipws(L: PLexer) =
+proc skipws(L: LexerRef) =
   while thisChar(L) in Whitespace: next(L)
-    
-proc get(L: PLexer; t: var TLexType): string =
+
+proc get(L: LexerRef; t: var LexType): string =
   skipws(L)
   let c = thisChar(L)
   t = tend
   if c == '\0': return nil
   result = ""
   result.add(c)
-  next(L) 
+  next(L)
   t = tchar
   case c
   of '-':  # '-", "--"
@@ -43,7 +43,7 @@ proc get(L: PLexer; t: var TLexType): string =
       next(L)
       if thisChar(L) == '-': # "---..."
         t = tdivider
-        result.add('-') 
+        result.add('-')
         while thisChar(L) == '-':
           next(L)
   of Letters: # word
@@ -73,23 +73,23 @@ proc get(L: PLexer; t: var TLexType): string =
         result.add('.')
         next(L)
   else: discard
-    
-proc get(L: PLexer): string = 
-  var t: TLexType
+
+proc get(L: LexerRef): string =
+  var t: LexType
   get(L,t)
-    
-proc reset(L: PLexer, s: string) =
+
+proc reset(L: LexerRef, s: string) =
   L.str  = s
   L.idx = 0
 
-proc newLexer(s: string): PLexer =
+proc newLexer(s: string): LexerRef =
   new(result)
   result.reset(s)
-    
+
 ### a container for values ###
-    
+
 type
-  TValueKind = enum
+  ValueKind = enum
     vInt,
     vFloat,
     vString,
@@ -97,9 +97,9 @@ type
     vFile,
     vSeq
 
-  PValue* = ref TValue
-  TValue* = object
-    case kind*: TValueKind
+  ValueRef* = ref Value
+  Value* = object
+    case kind*: ValueKind
       of vInt: asInt*: int
       of vFloat: asFloat*: float
       of vString: asString*: string
@@ -107,20 +107,20 @@ type
       of vFile:
         asFile*: File
         fileName*: string
-      of vSeq: asSeq*: seq[PValue]
+      of vSeq: asSeq*: seq[ValueRef]
 
-proc boolValue(c: bool): PValue =  PValue(kind: vBool, asBool: c)
-    
-proc fileValue(f: File, name: string): PValue =  PValue(kind: vFile, asFile: f, fileName: name)
-    
-proc strValue(s: string): PValue =  PValue(kind: vString, asString: s) 
-    
-proc intValue(v: int): PValue =   PValue(kind: vInt, asInt: v)
-    
-proc floatValue(v: float): PValue = PValue(kind: vFloat, asFloat: v)
-    
-proc seqValue(v: seq[PValue]): PValue = PValue(kind: vSeq, asSeq: v)
-    
+proc boolValue(c: bool): ValueRef =  ValueRef(kind: vBool, asBool: c)
+
+proc fileValue(f: File, name: string): ValueRef =  ValueRef(kind: vFile, asFile: f, fileName: name)
+
+proc strValue(s: string): ValueRef =  ValueRef(kind: vString, asString: s)
+
+proc intValue(v: int): ValueRef =   ValueRef(kind: vInt, asInt: v)
+
+proc floatValue(v: float): ValueRef = ValueRef(kind: vFloat, asFloat: v)
+
+proc seqValue(v: seq[ValueRef]): ValueRef = ValueRef(kind: vSeq, asSeq: v)
+
 type
   PSpec = ref TSpec
   TSpec = object
@@ -134,21 +134,21 @@ var
   parm_spec =  initTable[string,PSpec]()
 
 proc fail(msg: string)  =
-  stderr.writeln(progname & ": " & msg)
+  stderr.write(progname & ": " & msg & "\n")
   quit(usage)
 
-proc parseSpec(u: string) =    
+proc parseSpec(u: string) =
   var
-    L: PLexer
+    L: LexerRef
     tok: string
     groupCounter: int
     k = 1
-      
+
   let lines = u.splitLines
   L = newLexer(lines[0])
   progname = L.get
   usage = u
-  for line in lines[1..(-1)]:
+  for line in lines[1..^1]:
     var
       isarg = false
       multiple = false
@@ -188,7 +188,7 @@ proc parseSpec(u: string) =
       tok = L.get
     if tok == nil: continue
     # default types for flags and arguments
-    var 
+    var
       ftype = if isarg: "string" else: "bool"
       defValue = ""
     if tok == "(": # typed flag/argument
@@ -212,38 +212,38 @@ proc parseSpec(u: string) =
       multiple = t == telipsis
     elif ftype == "bool": # no type or default
       defValue = "false"
-            
+
     if name != nil:
       #echo("Param: " & name & " type: " & $ftype & " group: " & $groupCounter & " needsvalue: " & $(ftype != "bool") & " default: " & $defValue & " multiple: " & $multiple)
       let spec = PSpec(defVal:defValue, ptype: ftype, group: groupCounter, needsValue: ftype != "bool",multiple:multiple)
-      aliases[alias] = name        
+      aliases[alias] = name
       parm_spec[name] = spec
 
-proc tail(s: string): string = s[1..(-1)]
+proc tail(s: string): string = s[1..^1]
 
-var 
+var
   files = newSeq[File]()
 
 proc closeFiles() {.noconv.} =
   for f in files:
     f.close()
 
-proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
+proc parseArguments*(usage: string, args: seq[string]): Table[string,ValueRef] =
   var
-    vars = initTable[string,PValue]()
+    vars = initTable[string,ValueRef]()
     n = len(args) - 1
     i = 1
     k = 1
-    flag,value, arg: string        
+    flag,value, arg: string
     info: PSpec
     short: bool
     flagvalues: seq[seq[string]]
-      
+
   proc next(): string =
     if i > n: fail("an option required a value!")
     result = args[i]
     i += 1
-      
+
   proc get_alias(c: char): string =
     result = aliases[c]
     if result == nil:
@@ -252,7 +252,7 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
         fail("no such argument: " & $n)
       else:
         fail("no such option: " & c)
-      
+
   proc get_spec(name: string): PSpec =
     result = parm_spec[name]
     if result == nil:
@@ -264,7 +264,7 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
 
   # Collect failures
   var failures = newSeq[string]()
-  
+
   # parse the flags and arguments
   while i <= n:
     arg = next()
@@ -299,26 +299,26 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
       if not info.multiple:  k += 1
     flagvalues.add(@[flag,value])
     info.used = true
-  
+
   # Some options disables checking
   var enableChecks = true
   for flag,info in parm_spec:
     if info.used:
       if flag == "help" or flag == "version":
         enableChecks = false
-        
+
   # Check maximum group used
   var maxGroup = 0
   for item in flagvalues:
     info = get_spec(item[0])
     if maxGroup < info.group:
       maxGroup = info.group
-    
+
   # any flags not mentioned?
   for flag,info in parm_spec:
     if not info.used:
       # Is there no default and we have used options in this group?
-      if info.defVal == "" and info.group <= maxGroup: 
+      if info.defVal == "" and info.group <= maxGroup:
         failures.add("required option or argument missing: " & flag)
       else:
         flagvalues.add(@[flag,info.defVal])
@@ -330,7 +330,7 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
 
   # cool, we have the info, can convert known flags
   for item in flagvalues:
-    var pval: PValue;
+    var pval: ValueRef;
     let
       flag = item[0]
       value = item[1]
@@ -373,8 +373,8 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
         fail("cannot open " & value)
       pval = fileValue(f,value)
     else: discard
-    
-    var oval = vars[flag]
+
+    var oval = vars.getOrDefault(flag)
     if info.multiple: # multiple flags are sequence values
       if oval == nil: # first value!
         pval = seqValue(@[pval])
@@ -387,17 +387,17 @@ proc parseArguments*(usage: string, args: seq[string]): Table[string,PValue] =
 
   return vars
 
-proc parse*(usage: string): Table[string,PValue] =
-  var 
+proc parse*(usage: string): Table[string,ValueRef] =
+  var
     args: seq[string]
     n = paramCount()
   newSeq(args,n+1)
   for i in 0..n:
     args[i] = paramStr(i)
-  return parseArguments(usage,args)    
+  return parseArguments(usage,args)
 
 # Helper proc for verbosity level.
-proc verbosityLevel*(args: Table[string,PValue]): int =
+proc verbosityLevel*(args: Table[string, ValueRef]): int =
   if args.hasKey("verbose"):
     let verbosity = args["verbose"].asSeq
     result = verbosity.len
@@ -407,11 +407,11 @@ proc verbosityLevel*(args: Table[string,PValue]): int =
     result = 0
 
 # Helper to check if we should show version
-proc showVersion*(args: Table[string,PValue]): bool =
+proc showVersion*(args: Table[string, ValueRef]): bool =
   args["version"].asBool
 
 # Helper to check if we should show help
-proc showHelp*(args: Table[string,PValue]): bool =
+proc showHelp*(args: Table[string, ValueRef]): bool =
   args["help"].asBool
 
 
@@ -432,19 +432,19 @@ when isMainModule:
   # These two are special, they short out
   if args.showHelp: quit(help)
   if args.showVersion: quit("Version: 1.99")
-  
+
   # Ok, so what did we get...
   let n = args["n"].asInt
-  
+
   # This one is a helper
   let v = verbosityLevel(args)
-  
+
   echo "Lines to show: " & $n
   echo "Verbosity level: " & $verbosityLevel(args)
-  
+
   let myfiles = args["files"].asSeq
   var outFile = args["out"].asFile
-  
+
   for f in myfiles:
     for i in 1..n:
       writeln(outFile, string(f.asFile.readLine()))
